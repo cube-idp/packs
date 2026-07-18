@@ -1,0 +1,100 @@
+# Authored manifests — the floci upstream is Docker-only and ships no
+# Kubernetes YAML, so this Deployment + Service is authored here (not vendored).
+#
+# Image (pinned by tag AND digest — multi-arch index, resolved at authoring):
+#   floci/floci:1.5.33
+#   digest: sha256:d2ecc8035822b23b8587a56eab15edd825f41d3fb80d93e8e66680410beddc08
+#   registry: docker.io/floci/floci  (Docker Hub)
+#   verified 2026-07-19: floci/floci:1.5.33 and floci/floci:latest resolve to
+#   the SAME index digest above, i.e. 1.5.33 IS the latest stable release.
+#   Upstream project: github.com/floci-io/floci (AWS-compatible local emulator,
+#   an open-source alternative to LocalStack Community; Quarkus native binary).
+#
+# The emulator listens on port 4566 (the single AWS-compatible endpoint) and
+# serves GET /health -> 200 with a JSON services map (verified against the
+# running image). That path backs the readiness/liveness probes below.
+#
+# NO docker-socket mount: kind nodes run containerd with no Docker socket, so
+# floci's container-backed services (Lambda, RDS, ECS, EKS, …) cannot spawn
+# their helper containers and are unavailable in-cluster. Core services (S3,
+# DynamoDB, SQS, SNS, KMS, SecretsManager, …) run inside the emulator process
+# and work. Mounting a host Docker socket is deliberately NOT done (unsafe, and
+# absent on kind). The emulator enables its full service catalog by default;
+# the limitation is runtime (no socket), documented in the pack README — no
+# service list is pinned here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: floci
+  namespace: floci
+  labels:
+    app.kubernetes.io/name: floci
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: floci
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: floci
+    spec:
+      # enableServiceLinks: false is REQUIRED, not cosmetic. Kubernetes injects
+      # legacy Docker-style service-link env vars for every Service in the
+      # namespace; because this pack's Service is named "floci", that injects
+      # FLOCI_PORT=tcp://<clusterIP>:4566 into the container. The floci app is a
+      # SmallRye/Quarkus app that maps FLOCI_PORT -> the config property
+      # floci.port (its own listen port), which then fails to parse the
+      # "tcp://…:4566" value as an integer and CrashLoopBackOffs. Disabling
+      # service links stops that injection; the app then uses its built-in
+      # default port 4566. (Verified: with the links injected the pod crashes
+      # with SRCFG00029 "Expected an integer value, got tcp://…:4566"; without
+      # them it starts and serves /health.)
+      enableServiceLinks: false
+      containers:
+        - name: floci
+          image: floci/floci:1.5.33@sha256:d2ecc8035822b23b8587a56eab15edd825f41d3fb80d93e8e66680410beddc08
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: edge
+              containerPort: 4566
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: edge
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: edge
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: floci
+  namespace: floci
+  labels:
+    app.kubernetes.io/name: floci
+spec:
+  selector:
+    app.kubernetes.io/name: floci
+  ports:
+    - name: edge
+      port: 4566
+      targetPort: edge
+      protocol: TCP
