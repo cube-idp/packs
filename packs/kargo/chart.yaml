@@ -1,0 +1,58 @@
+# Kargo — Akuity's multi-stage GitOps promotion engine. Pinned to the latest
+# stable chart at authoring (2026-07-18/19) from the OCI registry
+# oci://ghcr.io/akuity/kargo-charts/kargo:
+#   chart kargo 1.10.9 (app v1.10.9)
+#   chart tgz sha256 d47241a3c827102eab525a5f804a0caa046766783ad3312be75e725d9acb7838
+#   OCI manifest digest sha256:58c8e33c2eb63efc7195b6c8b5d92904859d7a63600b9d4b8b5e4d193d122767
+#
+# OCI chart: the full oci:// reference goes in `chart:` (no `repo:` — the pack
+# renderer, internal/pack/helm.go, detects registry.IsOCI(chart) and pulls via
+# the helm OCI registry client, ignoring `repo:` for OCI charts). `version:`
+# selects the chart tag.
+#
+# releaseName "kargo" + namespace "kargo" make the rendered object names satisfy
+# the A9 health gate EXACTLY: Deployments kargo-api and kargo-controller (plus
+# kargo-webhooks-server, kargo-external-webhooks-server and
+# kargo-management-controller, which are not part of the gate). The chart does
+# NOT render a "kargo" Namespace object (it renders only its own sub-namespaces
+# kargo-cluster-secrets / kargo-shared-resources / kargo-system-resources), so
+# cube-idp auto-prepends the "kargo" Namespace (CONTRACT §2).
+#
+# IMAGE PIN: the chart floats a single image, ghcr.io/akuity/kargo, whose tag
+# defaults to the chart AppVersion (helm helper: `default .Chart.AppVersion
+# .Values.image.tag`). image.tag is pinned to v1.10.9 below — equal to the
+# AppVersion resolution, so `helm template` with this pin is byte-identical to
+# the chart-default render (verified). (The dex image ghcr.io/dexidp/dex:v2.44.0
+# only renders when api.oidc.dex.enabled — off by default — so it never appears
+# in this pack's stream; it is not floated here.)
+#
+# ADMIN ACCOUNT: the chart FAILS to render unless api.adminAccount.passwordHash
+# and api.adminAccount.tokenSigningKey are supplied (or an existing
+# api.secret.name is set). We supply chart-default local-IDP credentials so the
+# pack renders and installs out-of-the-box: passwordHash is a bcrypt hash of the
+# password "admin"; tokenSigningKey is a fixed key. These are baked defaults for
+# a LOCAL developer IDP — OVERRIDE them (via `values:` on the pack) for any
+# non-local use. The chart writes them into a generated Secret named "kargo-api"
+# (keys ADMIN_ACCOUNT_PASSWORD_HASH / ADMIN_ACCOUNT_TOKEN_SIGNING_KEY); that
+# Secret holds only the HASH + signing key, not a readable password — hence no
+# authSecretRef in pack.cue (see pack.cue + README).
+#
+# CRDs: the chart ships kargo's CRDs in its crds/ dir (recovered by the pack
+# renderer's CRDObjects() path). cert-manager CRDs are a RUNTIME prerequisite
+# (api.tls.selfSignedCert defaults true → Certificate/Issuer objects); the
+# conformance run delivers the cert-manager pack first.
+chart: oci://ghcr.io/akuity/kargo-charts/kargo
+version: "1.10.9"          # app v1.10.9; pin; bump deliberately
+releaseName: kargo
+namespace: kargo
+values:
+  # Pin the single floated image to its AppVersion resolution (inert; keeps
+  # the tag from floating on a future chart-default change).
+  image:
+    tag: v1.10.9
+  api:
+    adminAccount:
+      # bcrypt hash of the password "admin" — LOCAL-IDP DEFAULT, override for
+      # non-local use (README). tokenSigningKey signs the admin JWTs.
+      passwordHash: "$2a$10$FaCslsNsbCBo9sgQwGWwOuvgX1xAjfpJnyOlmReP0Ksb978UOpvRa"
+      tokenSigningKey: "woSEd79B84D6ZPoY4FSGtPxw0vpaTgFSHfTxI"
