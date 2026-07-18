@@ -1,0 +1,122 @@
+# Authored manifests — the floci-ui upstream is Docker-only and ships no
+# Kubernetes YAML, so this Deployment + Service is authored here (not vendored).
+#
+# Image (pinned by tag AND digest — multi-arch index, resolved at authoring):
+#   floci/floci-ui:0.2.0
+#   digest: sha256:03a261144e0708993c8e48b763a0edb072415feae4325f254beeb1835fa424d9
+#   registry: docker.io/floci/floci-ui  (Docker Hub)
+#   verified 2026-07-19: floci/floci-ui:0.2.0 and floci/floci-ui:latest resolve
+#   to the SAME index digest above, i.e. 0.2.0 IS the latest stable release.
+#   Upstream project: github.com/floci-io/floci-ui (the floci web console; a
+#   React SPA served by a small bundled Node server, image label version 0.2.0,
+#   revision 5e4c68a).
+#
+# PORT — VERIFIED by running the image: the image config sets PORT=4500 and the
+# container listens on a SINGLE port, 4500 (netstat inside the container shows
+# only :::4500 LISTEN; the server logs "Started development server:
+# http://localhost:4500"). The A11 row mentioned "4500 UI / 4501 API": there is
+# NO separate 4501 API port in this image — the UI and its API are served
+# together on the one PORT the server reads (4500 as shipped). 4501 is only the
+# server's *code* fallback (Number(process.env.PORT ?? 4501)) which the image
+# overrides to 4500; no process ever listens on 4501. So the pack exposes 4500
+# only. (VERIFY-API — recorded in the pack README and the A11 FINDINGS.)
+#
+# HEALTH PROBE PATH — VERIFIED by running the image: this SPA server has NO
+# dedicated health endpoint. GET / returns 200 (serves index.html); every
+# /health, /healthz, /readyz, /api/health, … returns 404. So the readiness and
+# liveness probes below hit GET / on port 4500, which is the correct,
+# unambiguous readiness signal for this image (A10's "verify by running the
+# image, don't guess the path" precedent).
+#
+# BACKEND ENDPOINT — VERIFIED by inspecting the server binary: it reads
+# process.env.FLOCI_ENDPOINT (default "http://localhost:4566") to reach the
+# floci emulator's AWS-compatible endpoint. The A11 row's FLOCI_ENDPOINT env
+# name is correct. Here it points at the floci pack's (A10) in-cluster Service:
+# floci.floci.svc.cluster.local:4566 (same `floci` namespace, shared with A10).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: floci-ui
+  namespace: floci
+  labels:
+    app.kubernetes.io/name: floci-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: floci-ui
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: floci-ui
+    spec:
+      # enableServiceLinks: false is set PROACTIVELY (A10 precedent). Kubernetes
+      # injects legacy Docker-style service-link env vars for every Service in
+      # the namespace; in the shared `floci` namespace that includes FLOCI_PORT
+      # (from A10's "floci" Service) and FLOCI_UI_PORT (from this pack's own
+      # "floci-ui" Service), both of the form tcp://<clusterIP>:<port>. The
+      # floci-ui server reads a whole family of FLOCI_* env vars (FLOCI_ENDPOINT,
+      # FLOCI_DEFAULT_ACCOUNT_ID, FLOCI_GCP_ENDPOINT, …); an injected FLOCI_*
+      # value of the form "tcp://…" is exactly the class of collision that
+      # CrashLoopBackOff'd the floci pod in A10. Disabling service links removes
+      # that whole surface; the app then reads only the env explicitly set below.
+      enableServiceLinks: false
+      containers:
+        - name: floci-ui
+          image: floci/floci-ui:0.2.0@sha256:03a261144e0708993c8e48b763a0edb072415feae4325f254beeb1835fa424d9
+          imagePullPolicy: IfNotPresent
+          env:
+            # The floci web console talks to the floci emulator's AWS-compatible
+            # endpoint over the in-cluster Service DNS (A10's `floci` Service in
+            # this same namespace, port 4566). Verified: the server reads
+            # process.env.FLOCI_ENDPOINT.
+            - name: FLOCI_ENDPOINT
+              value: http://floci.floci.svc.cluster.local:4566
+            # PORT is 4500 in the image already; set it explicitly so the listen
+            # port and the Service/probe below can never drift from the image's
+            # code default (which is 4501 when PORT is unset).
+            - name: PORT
+              value: "4500"
+          ports:
+            - name: http
+              containerPort: 4500
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: floci-ui
+  namespace: floci
+  labels:
+    app.kubernetes.io/name: floci-ui
+spec:
+  selector:
+    app.kubernetes.io/name: floci-ui
+  ports:
+    - name: http
+      port: 4500
+      targetPort: http
+      protocol: TCP
