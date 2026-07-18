@@ -9,9 +9,9 @@
 # test: they render through the gateway template instead (no pack list,
 # gateway.ref = the pack dir). The binary must be on PATH or absolute.
 #
-# Until P4 publishes the gateway pack to ghcr, point the gateway at a
-# checkout with CUBE_IDP_CONFORMANCE_GATEWAY_REF (CI: the cube-idp source
-# checkout's packs/traefik; local: <cube-idp-checkout>/packs/traefik).
+# The gateway defaults to the published oci ref below (P4). For offline
+# runs, or before the published tag is live, override with
+# CUBE_IDP_CONFORMANCE_GATEWAY_REF=<this-repo>/packs/traefik.
 set -euo pipefail
 PACK="${1:?usage: conformance.sh <pack-name>}"
 BIN="${2:-cube-idp}"
