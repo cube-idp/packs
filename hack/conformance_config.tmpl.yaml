@@ -7,4 +7,5 @@ spec:
   gateway: {pack: traefik, host: cube-idp.localtest.me, port: {{PORT}},
             ref: "{{GATEWAY_REF}}"}
   packs:
+{{EXTRA_PACK}}
     - {ref: "{{PACK_DIR}}"}
