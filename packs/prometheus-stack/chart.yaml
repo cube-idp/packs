@@ -1,0 +1,71 @@
+# kube-prometheus-stack — Prometheus Operator + Prometheus, Alertmanager,
+# Grafana, kube-state-metrics and node-exporter. Pinned to the latest stable
+# chart at authoring (2026-07-18) from
+# https://prometheus-community.github.io/helm-charts:
+# kube-prometheus-stack-87.17.0.tgz (app v0.92.1)
+# sha256 e9d625daece8804bfa82959296e59cf146756d9aa638f207ebe20e01d6d75514.
+#
+# releaseName MUST be "prometheus-stack" so the rendered object names satisfy
+# the A8 health gate: Deployment prometheus-stack-grafana, operator Deployment
+# prometheus-stack-kube-prom-operator, and the operator-created StatefulSet
+# prometheus-prometheus-stack-kube-prom-prometheus. namespace "monitoring" also
+# fixes the grafana admin Secret's namespace (pack.cue authSecretRef).
+#
+# The values below pin every image tag the chart would otherwise float to its
+# appVersion (grafana, prometheus-operator, prometheus, alertmanager,
+# kube-state-metrics, node-exporter, the operator's prometheus-config-reloader,
+# grafana's k8s-sidecar, the admission-webhook certgen, and the thanos default
+# base image). Each pinned tag equals the chart 87.17.0 default resolution:
+# `helm template` with these values is byte-identical to the chart-default
+# render (only grafana's randomly-generated admin password + its pod checksum
+# annotation differ between runs — that is chart non-determinism, not a pin).
+# CRDs install from the chart's crds/ dir (crds.enabled defaults true); the
+# chart's only hook is a pre-install/pre-upgrade webhook-certgen Job (patched
+# to IfNotPresent-safe here), which the contract's fresh-install hook handling
+# tolerates.
+chart: kube-prometheus-stack
+repo: https://prometheus-community.github.io/helm-charts
+version: "87.17.0"          # app v0.92.1; pin; bump deliberately
+releaseName: prometheus-stack
+namespace: monitoring
+values:
+  # Prometheus Operator + the images it manages via flags.
+  prometheusOperator:
+    image:
+      tag: v0.92.1
+    prometheusConfigReloader:
+      image:
+        tag: v0.92.1
+    thanosImage:
+      tag: v0.42.0
+    admissionWebhooks:
+      patch:
+        image:
+          tag: "1.8.4"
+  # Grafana subchart (grafana image + its config-sidecar).
+  grafana:
+    image:
+      tag: "13.1.0"
+    sidecar:
+      image:
+        tag: 2.8.1
+  # Prometheus server image (operator renders it into the Prometheus CR).
+  prometheus:
+    prometheusSpec:
+      image:
+        tag: v3.13.1-distroless
+  # Alertmanager image (operator renders it into the Alertmanager CR).
+  alertmanager:
+    alertmanagerSpec:
+      image:
+        tag: v0.33.1
+  # kube-state-metrics subchart image.
+  kube-state-metrics:
+    image:
+      tag: v2.19.1
+  # node-exporter subchart image (distroless variant → tag renders as
+  # v1.12.1-distroless, matching the chart default).
+  prometheus-node-exporter:
+    image:
+      tag: v1.12.1
+      distroless: true

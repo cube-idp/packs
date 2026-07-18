@@ -1,0 +1,34 @@
+# Every schema-defaulted field written out explicitly, copying the shipped
+# argo-workflows/gitea/argocd route style (argocd SSA-diff rule — a desired
+# manifest that omits a server-defaulted field reports a permanent OutOfSync;
+# see packs/gitea/manifests/20-httproute.yaml). hostname via D15's
+# ${GATEWAY_FQDN} (bare host, no port — Gateway API hostnames cannot carry
+# ports); ${GATEWAY_HOST} in pack.cue's expose block keeps host[:port]
+# semantics for the displayed URL.
+#
+# Backend is the Grafana Service (prometheus-stack-grafana, port 80 → the
+# grafana container port). Grafana's login uses the bootstrap admin Secret
+# prometheus-stack-grafana (user "admin"), declared in pack.cue's expose
+# block (authSecretRef + impliedFields). This route is a chart-external
+# object, so it lives in this manifests/ dir alongside the helm render.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: prometheus-stack-grafana
+  namespace: monitoring
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: cube-idp
+      namespace: ${GATEWAY_PACK}
+  hostnames: ["grafana.${GATEWAY_FQDN}"]
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /}
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: prometheus-stack-grafana
+          port: 80
+          weight: 1
