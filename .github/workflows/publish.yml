@@ -1,0 +1,32 @@
+name: publish
+on:
+  push:
+    tags: ['*/v*']
+permissions:
+  contents: read
+  packages: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.24'}
+      # Bootstrap: build the publisher from the cube-idp repo until a
+      # public release exists (F12 closes in P4; then swap to a pinned
+      # release download and delete these two steps).
+      - uses: actions/checkout@v4
+        with: {repository: cube-idp/cube-idp, path: cube-idp-src, token: '${{ secrets.CUBE_IDP_READ_TOKEN }}'}
+      - run: cd cube-idp-src && go build -o /usr/local/bin/cube-idp .
+      - run: echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+      - run: hack/publish-changed.sh
+      - name: attest (P5 wires GitHub attestation here)
+        run: echo "attestation added by P5 — digests in digests.env"
+      - name: rebuild index
+        # Digest sourcing (P2 Step 2 choice): --digest for the pack(s)
+        # published this run (digests.env lines from publish output),
+        # --from-registry resolves every other pack's digest by HEADing
+        # ghcr — no digests.lock to keep committed.
+        run: |
+          cube-idp pack index build packs -o index.json --from-registry $(sed 's/^/--digest /' digests.env)
+          cube-idp pack index push index.json --ref oci://ghcr.io/cube-idp/packs/index:latest

@@ -1,0 +1,6 @@
+# Agent worktrees (execution protocol of the cube-idp phase plans).
+.claude/worktrees/
+
+# Publish-run scratch (hack/publish-changed.sh output consumed in-run).
+digests.env
+index.json

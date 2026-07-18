@@ -1,0 +1,13 @@
+name: conformance
+# STUB — P3 replaces this with the per-pack conformance harness
+# (hack/conformance.sh: kind cluster + `cube-idp up` with one pack +
+# health gate + teardown, matrixed over changed packs).
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "per-pack conformance harness lands in P3 (hack/conformance.sh)"
