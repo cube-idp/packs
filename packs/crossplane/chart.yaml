@@ -1,0 +1,21 @@
+# Crossplane core — control plane framework for building platform APIs
+# (spec decision 5: core-only pack first; Providers/Configurations ship as
+# separate packs later). Pinned to the latest stable chart at authoring
+# (2026-07-18): https://charts.crossplane.io/stable/crossplane-2.3.3.tgz
+# sha256 327cadea168633b9dcaa71da1852fb308d837dd3f9c8a53410c155257df206c8.
+# Crossplane's core CRDs are installed by the crossplane pod's init
+# container at runtime, not by the chart (it has no crds/ dir) — no
+# vendored CRD manifests needed and none of the chart's objects are hooks.
+chart: crossplane
+repo: https://charts.crossplane.io/stable
+version: "2.3.3"           # app v2.3.3; pin; bump deliberately
+releaseName: crossplane
+namespace: crossplane-system
+values:
+  # The only image the chart references. Its default tag already resolves
+  # deterministically to "v" + appVersion of the pinned chart version, but
+  # it is pinned explicitly so the render is self-evidently immutable —
+  # matches `helm template` output for chart 2.3.3 exactly
+  # (xpkg.crossplane.io/crossplane/crossplane:v2.3.3 in both deployments).
+  image:
+    tag: v2.3.3
