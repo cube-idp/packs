@@ -1,0 +1,10 @@
+apiVersion: cube-idp.dev/v1alpha1
+kind: Cube
+metadata: {name: "{{NAME}}"}
+spec:
+  cluster: {provider: kind}
+  engine: {type: flux}
+  gateway: {pack: traefik, host: cube-idp.localtest.me, port: {{PORT}},
+            ref: "{{GATEWAY_REF}}"}
+  packs:
+    - {ref: "{{PACK_DIR}}"}

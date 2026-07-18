@@ -1,13 +1,44 @@
 name: conformance
-# STUB — P3 replaces this with the per-pack conformance harness
-# (hack/conformance.sh: kind cluster + `cube-idp up` with one pack +
-# health gate + teardown, matrixed over changed packs).
 on:
   pull_request:
-  workflow_dispatch:
+    paths: ['packs/**']
+permissions:
+  contents: read
 jobs:
-  conformance:
+  changed:
     runs-on: ubuntu-latest
+    outputs: {packs: '${{ steps.diff.outputs.packs }}'}
     steps:
       - uses: actions/checkout@v4
-      - run: echo "per-pack conformance harness lands in P3 (hack/conformance.sh)"
+        with: {fetch-depth: 0}
+      - id: diff
+        # $GITHUB_BASE_REF as an env var (never ${{ }} into run:) per the
+        # Actions injection doctrine; the [ -d ] filter drops deleted or
+        # renamed packs and non-pack files (packs/.gitkeep) so the matrix
+        # only carries directories that still exist on this PR.
+        run: |
+          PACKS=$(git diff --name-only "origin/$GITHUB_BASE_REF"... -- packs/ | cut -d/ -f2 | sort -u | while read -r p; do [ -d "packs/$p" ] && echo "$p"; done | jq -Rnc '[inputs]')
+          echo "packs=$PACKS" >> "$GITHUB_OUTPUT"
+  conformance:
+    needs: changed
+    if: needs.changed.outputs.packs != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: {pack: '${{ fromJSON(needs.changed.outputs.packs) }}'}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.24'}
+      # Bootstrap: build cube-idp from source until a public release exists
+      # (F12 closes in P4; then swap these two steps for a pinned release
+      # download, drop CUBE_IDP_CONFORMANCE_GATEWAY_REF below, and let the
+      # gateway resolve from oci://ghcr.io/cube-idp/packs/traefik).
+      - uses: actions/checkout@v4
+        with: {repository: cube-idp/cube-idp, path: cube-idp-src, token: '${{ secrets.CUBE_IDP_READ_TOKEN }}'}
+      - run: cd cube-idp-src && go build -o /usr/local/bin/cube-idp .
+      - run: hack/conformance.sh "$PACK"
+        env:
+          PACK: '${{ matrix.pack }}'
+          CUBE_IDP_E2E_GATEWAY_PORT: '18443'
+          CUBE_IDP_CONFORMANCE_GATEWAY_REF: '${{ github.workspace }}/cube-idp-src/packs/traefik'
