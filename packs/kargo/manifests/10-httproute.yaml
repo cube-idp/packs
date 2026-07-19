@@ -1,0 +1,36 @@
+# Kargo API/UI route. Every schema-defaulted field is written out explicitly,
+# copying the shipped argocd/gitea/argo-workflows/prometheus-stack route style
+# (argocd SSA-diff rule — a desired manifest that omits a server-defaulted
+# field reports a permanent OutOfSync). Hostname uses D15's ${GATEWAY_FQDN}
+# (bare host, no port — Gateway API hostnames cannot carry ports);
+# ${GATEWAY_HOST} in pack.cue's expose block keeps host[:port] semantics for
+# the displayed URL.
+#
+# Backend is the Kargo API Service (kargo-api). That Service listens on port
+# 443 and targets container port 8080; the API server serves HTTPS behind its
+# self-signed cert (api.tls.selfSignedCert defaults true, TLS_ENABLED=true), so
+# the backendRef port is 443 — the API is NOT flipped to plaintext (out of the
+# A9 row's scope; same TLS-backend precedent as argo-workflows/A7). This route
+# is a chart-external object, so it lives here in manifests/ alongside the helm
+# render.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kargo
+  namespace: kargo
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: cube-idp
+      namespace: ${GATEWAY_PACK}
+  hostnames: ["kargo.${GATEWAY_FQDN}"]
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /}
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: kargo-api
+          port: 443
+          weight: 1
