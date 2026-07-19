@@ -1,9 +1,10 @@
 # cube-engine-flux pack
 
-The **flux GitOps engine**, packaged as a cube-idp chart pack
-(engine-as-pack spec 2026-07-19, D1/D2). This is the pack `cube-idp up`
-fetches, renders, and SSA-installs when `spec.engine.type: flux` — the
-in-binary embedded flux manifests it replaces are retired.
+The **flux GitOps engine**, packaged as a cube-idp **vendored-manifests**
+pack (engine-as-pack spec 2026-07-19, D1/D2 as narrowed by spec §10). This
+is the pack `cube-idp up` fetches, renders, and SSA-installs when
+`spec.engine.type: flux` — the in-binary embedded flux manifests it
+replaces are retired.
 
 This is an **engine pack**, not a workload pack: reference it via
 `spec.engine.ref` (or let the published default resolve it), **not** via
@@ -14,75 +15,59 @@ Gateway API CRDs).
 
 Renders:
 
-- `chart.yaml` — the `fluxcd-community/flux2` helm chart (pinned
-  `2.19.0`, app `v2.9.1`), with baked values that disable every controller
-  cube-idp does not use, leaving only **source-controller** and
-  **kustomize-controller** (parity with the retired
+- `manifests/install.yaml` — the vendored output of
   `flux install --export --components=source-controller,kustomize-controller`
-  blob). No `manifests/` dir — the chart carries the CRDs.
+  (flux controllers `v1.9.2`). Self-stamped `flux-system` namespaces,
+  including the `Namespace` object. Only the two controllers cube-idp uses
+  — **source-controller** and **kustomize-controller** — plus their CRDs
+  and RBAC. No `chart.yaml`: this is a chartless, data-only pack.
 
-## Parity target and the community-chart caveat
+## Why manifests, not a chart (namespace correctness)
 
-The chart is `fluxcd-community/flux2` — a **community**-maintained chart,
-**not** an `fluxcd/fluxcd` core artifact. Parity with the retired embedded
-blob is the contract, and it is proven by the $ROOT e2e engine matrix
-(`CUBE_IDP_E2E_ENGINE=flux`), not by the chart's provenance. Chart pin
-`2.19.0` was chosen because its rendered controller images
-(`source-controller:v1.9.2`, `kustomize-controller:v1.9.2`) match the
-retired blob exactly — verified with `helm template`, not guessed.
+The only flux helm chart in existence, `fluxcd-community/flux2`, renders
+**zero** objects with `metadata.namespace` at every version — it is built
+for `helm install --namespace X`, where helm defaults the namespace at
+apply time against a live cluster's REST mapper. cube-idp renders
+client-side and hermetically (`action.DryRunClient`), where that defaulting
+never runs, and cube-idp's Applier hard-fails on namespaced objects that
+carry no namespace. fluxcd ships no official install chart (manifests only,
+via `flux install --export`). So the flux engine pack vendors those
+manifests directly: they self-stamp `flux-system` on every namespaced
+object and include the `Namespace` object, which is exactly what cube-idp
+needs. (See spec §10 amendment for the full decision trail — a render-path
+namespace stamp was considered and rejected by the owner.)
 
-## What's disabled and why
+The vendored manifests are, by construction, byte-identical to the retired
+$ROOT embed (`internal/engine/flux/manifests/install.yaml`), so parity with
+the previous behaviour holds automatically. Parity is also proven by the
+$ROOT e2e engine matrix (`CUBE_IDP_E2E_ENGINE=flux`).
 
-Baked in `chart.yaml` `values:` — the four unused controllers, each via
-the chart's `<controller>.create: false` key (verified against
-`helm show values fluxcd-community/flux2 --version 2.19.0`):
+## Customisation is not possible for the flux engine pack (this phase)
 
-- `helmController.create: false`
-- `notificationController.create: false`
-- `imageAutomationController.create: false`
-- `imageReflectionController.create: false`
+Unlike the argocd engine pack, the flux engine pack is **chartless**, so it
+takes **no values**. Setting `spec.engine.values` with `type: flux` is a
+typed error — **CUBE-4016** (GT15: values are helm-only; a data-only
+manifests pack cannot consume them). There is intentionally no `#Values`
+field in `pack.cue`.
 
-A parity render (`helm template … --set <each>.create=false`) yields
-**exactly two** Deployments — `source-controller` and
-`kustomize-controller` — in `flux-system`.
+Customisation of the flux engine arrives later, via the **self-managed
+setup** (GT16) — `spec.engine.selfManage`, where flux reconciles its own
+install and the operator can layer changes through that path. That is
+owner-deferred and out of scope for this phase.
 
-## Tuning knob (resources, not replicas)
+## Bump procedure
 
-The flux2 chart models its controllers as **singletons**: the
-`kustomizeController:` value block exposes **no replica key** (verified
-against `helm show values … --version 2.19.0`). The operator-tunable knob
-is therefore the controller's **resources**, not its replica count:
+This pack **replaces** the retired `hack/gen-flux-manifests.sh` in $ROOT.
+To move flux forward, regenerate `manifests/install.yaml` with the flux CLI
+at the target version:
 
-```yaml
-spec:
-  engine:
-    type: flux
-    values:
-      kustomizeController:
-        resources:
-          requests:
-            cpu: 250m   # default 100m
+```bash
+flux install --export \
+  --components=source-controller,kustomize-controller \
+  > manifests/install.yaml
 ```
 
-Verified: `--set kustomizeController.resources.requests.cpu=250m` lands in
-the rendered `kustomize-controller` Deployment's container `resources`.
-The $ROOT e2e (`TestEngineSelfManage`) drives this exact path and asserts
-the rendered resources field converges — it reads this knob from here.
-
-## Chart pin bump procedure
-
-This pack **replaces** the retired `hack/gen-flux-manifests.sh` in $ROOT:
-there is no manifest to regenerate. To move flux forward, bump the
-`version:` in `chart.yaml` to a newer `fluxcd-community/flux2` chart
-release (`helm search repo fluxcd-community/flux2 --versions`), confirm the
-rendered `source-controller`/`kustomize-controller` image tags are the
-flux distribution you intend, re-render to confirm exactly the two
-controllers still land in `flux-system`, and let the $ROOT e2e engine
-matrix prove parity. Bump deliberately, like `packs/traefik`.
-
-## Open values (D3)
-
-`pack.cue`'s `#Values: {...}` is an **open** struct: the operator controls
-the full flux2 chart surface. Content validation is helm's, not CUE's —
-unknown keys are silently ignored (the accepted operator-in-control cost).
-Baked values above are merged under the operator's `spec.engine.values`.
+Confirm the rendered controller image tags are the flux distribution you
+intend, confirm exactly the two controllers still land in `flux-system`,
+and let the $ROOT e2e engine matrix prove parity. Bump deliberately, like
+`packs/traefik`.
