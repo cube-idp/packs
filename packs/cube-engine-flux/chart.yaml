@@ -1,0 +1,16 @@
+# Flux as cube-idp's engine pack (engine-as-pack spec D1/D2, 2026-07-19).
+# Community chart fluxcd-community/flux2 — NOT a fluxcd/fluxcd artifact;
+# parity target is the retired embedded blob (`flux install
+# --export --components=source-controller,kustomize-controller`), proven by
+# the $ROOT e2e engine matrix. Bump deliberately, like packs/traefik.
+chart: flux2
+repo: https://fluxcd-community.github.io/helm-charts
+version: "2.19.0"          # app v2.9.1; source/kustomize-controller v1.9.2 — parity with the retired blob
+releaseName: flux
+namespace: flux-system
+values:
+  # Blob parity: only the two controllers cube-idp uses.
+  helmController: {create: false}
+  notificationController: {create: false}
+  imageAutomationController: {create: false}
+  imageReflectionController: {create: false}
