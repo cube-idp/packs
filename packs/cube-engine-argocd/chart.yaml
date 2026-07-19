@@ -1,0 +1,19 @@
+# Argo CD as cube-idp's engine pack (engine-as-pack spec D1/D2, 2026-07-19).
+# Community chart argoproj/argo-helm (not argoproj's core install.yaml);
+# parity proven by the $ROOT e2e engine matrix. Bump deliberately.
+# Every baked value below carries a retired install.yaml hand-edit:
+chart: argo-cd
+repo: https://argoproj.github.io/argo-helm
+version: "10.1.4"          # appVersion v3.4.5 — parity with the retired blob
+releaseName: argocd
+namespace: argocd
+values:
+  global:
+    image:
+      imagePullPolicy: IfNotPresent   # airgap: bundle node-loads images; Always would bypass them
+  configs:
+    params:
+      server.insecure: true           # HTTP behind cube-idp's gateway (no self-signed redirect loop)
+      # Load-bearing for OCI pack delivery: argocd's repo-server must accept
+      # the flux-style artifact media type cube-idp pushes to zot.
+      reposerver.oci.layer.media.types: "application/vnd.oci.image.layer.v1.tar+gzip,application/vnd.oci.image.layer.v1.tar,application/vnd.cncf.helm.chart.content.v1.tar+gzip,application/vnd.cncf.flux.content.v1.tar+gzip"
