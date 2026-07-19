@@ -1,0 +1,137 @@
+# Vendored VERBATIM from argoproj/argo-events v1.9.11 release
+# install-validating-webhook.yaml. DO NOT EDIT BY HAND — re-vendor as
+# documented in this pack's README.md ("Re-vendoring" section).
+#
+#   Upstream URL: https://github.com/argoproj/argo-events/releases/download/v1.9.11/install-validating-webhook.yaml
+#   Version:      v1.9.11 (webhook image quay.io/argoproj/argo-events:v1.9.11)
+#   sha256 (pristine upstream install-validating-webhook.yaml): 4b7fd345dc2ca6ab2a963eaaf6841bf6702d95da00be318b301a1d2b87c2f163
+#
+# This file ships the events-webhook Deployment + Service + RBAC, which are NOT
+# in install.yaml but ARE required by the A6 health gate (controller-manager
+# AND events-webhook Available). NO transformation is applied — the bytes below
+# this header are byte-identical to the pristine upstream file. Upstream already
+# stamps metadata.namespace: argo-events on every namespaced object and on the
+# ClusterRoleBinding subject, so no namespace transformer is needed.
+# imagePullPolicy is left verbatim ("strip nothing").
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argo-events-webhook-sa
+  namespace: argo-events
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argo-events-webhook
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - create
+  - update
+  - delete
+  - patch
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - validatingwebhookconfigurations
+  verbs:
+  - get
+  - list
+  - create
+  - update
+  - delete
+  - patch
+  - watch
+- apiGroups:
+  - argoproj.io
+  resources:
+  - eventbus
+  - eventsources
+  - sensors
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterroles
+  verbs:
+  - get
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argo-events-webhook-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: argo-events-webhook
+subjects:
+- kind: ServiceAccount
+  name: argo-events-webhook-sa
+  namespace: argo-events
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: events-webhook
+  namespace: argo-events
+spec:
+  ports:
+  - port: 443
+    targetPort: 443
+  selector:
+    app: events-webhook
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: events-webhook
+  namespace: argo-events
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: events-webhook
+  template:
+    metadata:
+      labels:
+        app: events-webhook
+    spec:
+      containers:
+      - args:
+        - webhook-service
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: PORT
+          value: "443"
+        image: quay.io/argoproj/argo-events:v1.9.11
+        imagePullPolicy: Always
+        name: webhook
+      serviceAccountName: argo-events-webhook-sa

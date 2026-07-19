@@ -1,0 +1,39 @@
+# Kyverno — Kubernetes-native policy engine (validate, mutate, generate,
+# cleanup). Pinned to the latest stable chart at authoring (2026-07-18)
+# from https://kyverno.github.io/kyverno: kyverno-3.8.2.tgz
+# sha256 f4fc787cf1d6781eefb9e9b45837edcddcfae984c872888289914e97207cc5de.
+# The 22 CRDs (kyverno's own + the kyverno-api subchart's) render from the
+# chart's crds/kyverno-api subcharts as plain templates (crds.install
+# defaults true) — there is no crds/ dir to re-inject. The chart's only
+# hooks are helm-test, post-upgrade migrate-resources, and pre-delete
+# cleanup jobs: none fires on a fresh install, so the contract's hook
+# handling (§1) skips them all and the render is hook-free.
+chart: kyverno
+repo: https://kyverno.github.io/kyverno
+version: "3.8.2"           # app v1.18.2; pin; bump deliberately
+releaseName: kyverno
+namespace: kyverno
+values:
+  # The five images the default render references (the four controllers
+  # plus the admission controller's kyvernopre init container). Their
+  # default tags already resolve deterministically to the pinned chart's
+  # appVersion, but they are pinned explicitly so the render is
+  # self-evidently immutable — matches `helm template` output for chart
+  # 3.8.2 exactly (reg.kyverno.io/kyverno/{kyvernopre,kyverno,
+  # background-controller,cleanup-controller,reports-controller}:v1.18.2).
+  admissionController:
+    initContainer:
+      image:
+        tag: v1.18.2
+    container:
+      image:
+        tag: v1.18.2
+  backgroundController:
+    image:
+      tag: v1.18.2
+  cleanupController:
+    image:
+      tag: v1.18.2
+  reportsController:
+    image:
+      tag: v1.18.2
